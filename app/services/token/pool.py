@@ -33,8 +33,9 @@ class TokenPool:
         选择一个可用 Token
         策略: 
         1. 选择 active 状态且有配额的 token
-        2. 优先选择剩余额度最多的
-        3. 如果额度相同，随机选择（避免并发冲突）
+        2. 优先选择没有失败记录的 token (fail_count=0)
+        3. 在同等条件下，优先选择剩余额度最多的
+        4. 如果额度相同，随机选择（避免并发冲突）
         """
         # 选择 token
         available = [
@@ -44,6 +45,11 @@ class TokenPool:
         
         if not available:
             return None
+        
+        # 优先选择没有失败记录的 token
+        no_fail_tokens = [t for t in available if t.fail_count == 0]
+        if no_fail_tokens:
+            available = no_fail_tokens
             
         # 找到最大额度
         max_quota = max(t.quota for t in available)

@@ -11,11 +11,9 @@ import asyncio
 import orjson
 from app.core.logger import logger
 
-
 router = APIRouter()
 
 TEMPLATE_DIR = Path(__file__).parent.parent.parent / "static"
-
 
 async def render_template(filename: str):
     """渲染指定模板"""
@@ -27,19 +25,19 @@ async def render_template(filename: str):
         content = await f.read()
     return HTMLResponse(content)
 
-
 def _sse_event(payload: dict) -> str:
     return f"data: {orjson.dumps(payload).decode()}\n\n"
-
 
 def _verify_stream_api_key(request: Request) -> None:
     api_key = get_config("app.api_key", "")
     if not api_key:
         return
     key = request.query_params.get("api_key")
+    # 去掉 Bearer 前缀（如果有）
+    if key and key.startswith("Bearer "):
+        key = key[7:]  # 移除 "Bearer " (7个字符)
     if key != api_key:
         raise HTTPException(status_code=401, detail="Invalid authentication token")
-
 
 @router.get("/api/v1/admin/batch/{task_id}/stream")
 async def stream_batch(task_id: str, request: Request):
@@ -77,7 +75,6 @@ async def stream_batch(task_id: str, request: Request):
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
 
-
 @router.post("/api/v1/admin/batch/{task_id}/cancel", dependencies=[Depends(verify_api_key)])
 async def cancel_batch(task_id: str):
     task = get_task(task_id)
@@ -86,37 +83,31 @@ async def cancel_batch(task_id: str):
     task.cancel()
     return {"status": "success"}
 
-
 @router.get("/admin", response_class=HTMLResponse, include_in_schema=False)
 async def admin_login_page():
     """管理后台登录页"""
     return await render_template("login/login.html")
-
 
 @router.get("/admin/config", response_class=HTMLResponse, include_in_schema=False)
 async def admin_config_page():
     """配置管理页"""
     return await render_template("config/config.html")
 
-
 @router.get("/admin/token", response_class=HTMLResponse, include_in_schema=False)
 async def admin_token_page():
     """Token 管理页"""
     return await render_template("token/token.html")
-
 
 @router.post("/api/v1/admin/login", dependencies=[Depends(verify_app_key)])
 async def admin_login_api():
     """管理后台登录验证（使用 app_key）"""
     return {"status": "success", "api_key": get_config("app.api_key", "")}
 
-
 @router.get("/api/v1/admin/config", dependencies=[Depends(verify_api_key)])
 async def get_config_api():
     """获取当前配置"""
     # 暴露原始配置字典
     return config._config
-
 
 @router.post("/api/v1/admin/config", dependencies=[Depends(verify_api_key)])
 async def update_config_api(data: dict):
@@ -126,7 +117,6 @@ async def update_config_api(data: dict):
         return {"status": "success", "message": "配置已更新"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
 
 @router.get("/api/v1/admin/storage", dependencies=[Depends(verify_api_key)])
 async def get_storage_info():
@@ -150,14 +140,12 @@ async def get_storage_info():
                 storage_type = storage.dialect
     return {"type": storage_type or "local"}
 
-
 @router.get("/api/v1/admin/tokens", dependencies=[Depends(verify_api_key)])
 async def get_tokens_api():
     """获取所有 Token"""
     storage = get_storage()
     tokens = await storage.load_tokens()
     return tokens or {}
-
 
 @router.post("/api/v1/admin/tokens", dependencies=[Depends(verify_api_key)])
 async def update_tokens_api(data: dict):
@@ -173,7 +161,6 @@ async def update_tokens_api(data: dict):
         return {"status": "success", "message": "Token 已更新"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
 
 @router.post("/api/v1/admin/tokens/refresh", dependencies=[Depends(verify_api_key)])
 async def refresh_tokens_api(data: dict):
@@ -239,7 +226,6 @@ async def refresh_tokens_api(data: dict):
         return response
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
 
 @router.post(
     "/api/v1/admin/tokens/refresh/async", dependencies=[Depends(verify_api_key)]
@@ -344,7 +330,6 @@ async def refresh_tokens_api_async(data: dict):
         "task_id": task.id,
         "total": len(unique_tokens),
     }
-
 
 @router.post("/api/v1/admin/tokens/nsfw/enable", dependencies=[Depends(verify_api_key)])
 async def enable_nsfw_api(data: dict):
@@ -453,7 +438,6 @@ async def enable_nsfw_api(data: dict):
     except Exception as e:
         logger.error(f"Enable NSFW failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
-
 
 @router.post(
     "/api/v1/admin/tokens/nsfw/enable/async", dependencies=[Depends(verify_api_key)]
@@ -577,12 +561,50 @@ async def enable_nsfw_api_async(data: dict):
         "total": len(unique_tokens),
     }
 
-
 @router.get("/admin/cache", response_class=HTMLResponse, include_in_schema=False)
 async def admin_cache_page():
     """缓存管理页"""
     return await render_template("cache/cache.html")
 
+@router.get("/admin/playground", response_class=HTMLResponse, include_in_schema=False)
+async def admin_playground_page():
+    """API Playground"""
+    return await render_template("playground/playground.html")
+
+@router.get("/api/v1/admin/conversations")
+async def get_conversations(api_key: str = Depends(verify_api_key)):
+    """获取所有对话记录"""
+    try:
+        storage = get_storage()
+        # 如果是 LocalStorage，直接调用新方法
+        if isinstance(storage, LocalStorage):
+            conversations = await storage.load_conversations()
+            return {"conversations": conversations}
+        # 其他存储类型暂不支持，返回空数组
+        return {"conversations": []}
+    except Exception as e:
+        logger.error(f"获取对话记录失败: {e}")
+        raise HTTPException(status_code=500, detail=f"获取对话记录失败: {str(e)}")
+
+@router.post("/api/v1/admin/conversations")
+async def save_conversations(request: Request, api_key: str = Depends(verify_api_key)):
+    """保存对话记录"""
+    try:
+        body = await request.json()
+        conversations = body.get("conversations", [])
+        
+        storage = get_storage()
+        # 如果是 LocalStorage，直接调用新方法
+        if isinstance(storage, LocalStorage):
+            await storage.save_conversations(conversations)
+            return {"status": "success"}
+        # 其他存储类型暂不支持
+        raise HTTPException(status_code=501, detail="当前存储类型不支持对话记录")
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"保存对话记录失败: {e}")
+        raise HTTPException(status_code=500, detail=f"保存对话记录失败: {str(e)}")
 
 @router.get("/api/v1/admin/cache", dependencies=[Depends(verify_api_key)])
 async def get_cache_stats_api(request: Request):
@@ -818,7 +840,6 @@ async def get_cache_stats_api(request: Request):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-
 @router.post(
     "/api/v1/admin/cache/online/load/async", dependencies=[Depends(verify_api_key)]
 )
@@ -980,7 +1001,6 @@ async def load_online_cache_api_async(data: dict):
         "total": len(selected_tokens),
     }
 
-
 @router.post("/api/v1/admin/cache/clear", dependencies=[Depends(verify_api_key)])
 async def clear_local_cache_api(data: dict):
     """清理本地缓存"""
@@ -994,7 +1014,6 @@ async def clear_local_cache_api(data: dict):
         return {"status": "success", "result": result}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
 
 @router.get("/api/v1/admin/cache/list", dependencies=[Depends(verify_api_key)])
 async def list_local_cache_api(
@@ -1015,7 +1034,6 @@ async def list_local_cache_api(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-
 @router.post("/api/v1/admin/cache/item/delete", dependencies=[Depends(verify_api_key)])
 async def delete_local_cache_item_api(data: dict):
     """删除单个本地缓存文件"""
@@ -1031,7 +1049,6 @@ async def delete_local_cache_item_api(data: dict):
         return {"status": "success", "result": result}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
 
 @router.post("/api/v1/admin/cache/online/clear", dependencies=[Depends(verify_api_key)])
 async def clear_online_cache_api(data: dict):
@@ -1121,7 +1138,6 @@ async def clear_online_cache_api(data: dict):
     finally:
         if delete_service:
             await delete_service.close()
-
 
 @router.post(
     "/api/v1/admin/cache/online/clear/async", dependencies=[Depends(verify_api_key)]

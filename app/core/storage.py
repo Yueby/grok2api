@@ -32,6 +32,7 @@ from app.core.logger import logger
 # 配置文件路径
 CONFIG_FILE = Path(__file__).parent.parent.parent / "data" / "config.toml"
 TOKEN_FILE = Path(__file__).parent.parent.parent / "data" / "token.json"
+CONVERSATIONS_FILE = Path(__file__).parent.parent.parent / "data" / "conversations.json"
 LOCK_DIR = Path(__file__).parent.parent.parent / "data" / ".locks"
 
 # JSON 序列化优化助手函数
@@ -215,6 +216,34 @@ class LocalStorage(BaseStorage):
         except Exception as e:
             logger.error(f"LocalStorage: 保存 Token 失败: {e}")
             raise StorageError(f"保存 Token 失败: {e}")
+
+    async def load_conversations(self) -> list:
+        """加载对话列表"""
+        if not CONVERSATIONS_FILE.exists():
+            return []
+        try:
+            async with aiofiles.open(CONVERSATIONS_FILE, "rb") as f:
+                content = await f.read()
+                return json_loads(content)
+        except Exception as e:
+            logger.error(f"LocalStorage: 加载对话失败: {e}")
+            return []
+
+    async def save_conversations(self, data: list):
+        """保存对话列表"""
+        try:
+            CONVERSATIONS_FILE.parent.mkdir(parents=True, exist_ok=True)
+            temp_path = CONVERSATIONS_FILE.with_suffix('.tmp')
+            
+            # 原子写操作
+            async with aiofiles.open(temp_path, "wb") as f:
+                await f.write(orjson.dumps(data, option=orjson.OPT_INDENT_2))
+            
+            os.replace(temp_path, CONVERSATIONS_FILE)
+            
+        except Exception as e:
+            logger.error(f"LocalStorage: 保存对话失败: {e}")
+            raise StorageError(f"保存对话失败: {e}")
 
     async def close(self):
         pass

@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Grok2API - Playground</title>
+  <link rel="icon" href="/static/favicon/favicon.ico">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://cdn.jsdelivr.net/npm/geist@1.0.0/dist/fonts/geist-sans/style.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/geist@1.0.0/dist/fonts/geist-mono/style.css" rel="stylesheet">
+  <link href="/static/common/common.css?v=2" rel="stylesheet">
+  <link href="/static/playground/playground.css?v=8" rel="stylesheet">
+  <link href="/static/common/toast.css" rel="stylesheet">
+  <!-- Markdown 渲染库 -->
+  <script src="https://cdn.jsdelivr.net/npm/marked@11.1.1/marked.min.js" crossorigin="anonymous"></script>
+</head>
+
+<body class="min-h-screen flex flex-col" style="background-color: var(--bg); height: 100vh; overflow: hidden;">
+
+  <div id="app-header"></div>
+
+  <main class="flex-1 flex" style="overflow: hidden;">
+    <!-- 左侧：对话列表 -->
+    <aside class="playground-sidebar">
+      <div class="p-4 border-b border-[var(--border)]">
+        <button onclick="newConversation()" class="geist-button w-full gap-2">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 5v14M5 12h14" />
+          </svg>
+          新对话
+        </button>
+      </div>
+
+      <div class="conversations-list" id="conversations-list">
+        <!-- 动态加载对话列表 -->
+      </div>
+    </aside>
+
+    <!-- 右侧：对话区域 -->
+    <div class="playground-main">
+      <!-- 顶部工具栏 -->
+      <div class="playground-header">
+        <h2 class="text-lg font-semibold" id="chat-title">新对话</h2>
+        <div class="flex items-center gap-2">
+          <select id="model-select" class="geist-input h-8 text-xs" onchange="updateModel()" style="width: auto;">
+            <option value="grok-4">grok-4</option>
+            <option value="grok-4-fast">grok-4-fast</option>
+            <option value="grok-4-mini">grok-4-mini</option>
+            <option value="grok-4.1">grok-4.1</option>
+            <option value="grok-4.1-thinking">grok-4.1-thinking</option>
+          </select>
+          <button onclick="clearCurrentConversation()" class="geist-button-outline h-8 px-3 text-xs gap-1">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="3 6 5 6 21 6"></polyline>
+              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+            </svg>
+            清空
+          </button>
+        </div>
+      </div>
+
+      <!-- 消息列表 -->
+      <div class="playground-messages" id="messages-container">
+        <div class="empty-state">
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-[var(--accents-3)]">
+            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+          </svg>
+          <p class="text-sm text-[var(--accents-4)] mt-3">开始新对话</p>
+        </div>
+      </div>
+
+      <!-- 输入区域 -->
+      <div class="playground-input">
+        <div class="input-container">
+          <textarea 
+            id="message-input" 
+            class="geist-input message-textarea" 
+            placeholder="输入消息..." 
+            rows="1"
+            onkeydown="handleInputKeydown(event)"
+            oninput="autoResizeTextarea(this)"></textarea>
+          <button onclick="sendMessage()" class="geist-button send-button" id="send-btn">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="22" y1="2" x2="11" y2="13"></line>
+              <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+            </svg>
+          </button>
+        </div>
+        <div class="text-xs text-[var(--accents-4)] text-center mt-2">
+          Enter 发送 · Shift + Enter 换行
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <script src="/static/common/admin-auth.js?v=2"></script>
+  <script src="/static/common/header.js?v=2"></script>
+  <script src="/static/common/toast.js"></script>
+  <script src="/static/playground/playground.js?v=20"></script>
+</body>
+
+</html>

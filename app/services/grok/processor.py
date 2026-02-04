@@ -11,9 +11,7 @@ from app.core.config import get_config
 from app.core.logger import logger
 from app.services.grok.assets import DownloadService
 
-
 ASSET_URL = "https://assets.grok.com/"
-
 
 class BaseProcessor:
     """基础处理器"""
@@ -78,7 +76,6 @@ class BaseProcessor:
         }
         return f"data: {orjson.dumps(chunk).decode()}\n\n"
 
-
 class StreamProcessor(BaseProcessor):
     """流式响应处理器"""
     
@@ -140,7 +137,15 @@ class StreamProcessor(BaseProcessor):
                         self.think_opened = False
                     
                     # 处理生成的图片
-                    for url in mr.get("generatedImageUrls", []):
+                    image_urls = mr.get("generatedImageUrls", [])
+                    valid_image_count = 0
+                    
+                    for url in image_urls:
+                        # 跳过空 URL
+                        if not url or not url.strip():
+                            logger.warning(f"Empty image URL in generatedImageUrls (total: {len(image_urls)}, valid: {valid_image_count})")
+                            continue
+                            
                         parts = url.split("/")
                         img_id = parts[-2] if len(parts) >= 2 else "image"
                         
@@ -149,12 +154,29 @@ class StreamProcessor(BaseProcessor):
                             base64_data = await dl_service.to_base64(url, self.token, "image")
                             if base64_data:
                                 yield self._sse(f"![{img_id}]({base64_data})\n")
+                                valid_image_count += 1
                             else:
                                 final_url = await self.process_url(url, "image")
-                                yield self._sse(f"![{img_id}]({final_url})\n")
+                                # 验证最终 URL
+                                if final_url and not final_url.endswith('/image/'):
+                                    yield self._sse(f"![{img_id}]({final_url})\n")
+                                    valid_image_count += 1
                         else:
                             final_url = await self.process_url(url, "image")
-                            yield self._sse(f"![{img_id}]({final_url})\n")
+                            # 验证最终 URL
+                            if final_url and not final_url.endswith('/image/'):
+                                yield self._sse(f"![{img_id}]({final_url})\n")
+                                valid_image_count += 1
+                            else:
+                                logger.warning(f"Invalid final URL generated: {final_url} from {url}")
+                    
+                    # 如果请求了图片但全部失败，给出提示
+                    if image_urls and valid_image_count == 0:
+                        yield self._sse(f"⚠️ 图片生成失败，Grok API 返回了 {len(image_urls)} 个空链接。\n\n")
+                        yield self._sse("**可能原因：**\n")
+                        yield self._sse("1. 内容被 Grok 安全审核过滤\n")
+                        yield self._sse("2. Token 的 NSFW 权限不足\n")
+                        yield self._sse("3. 尝试使用更艺术化的描述重新生成\n")
                     
                     if (meta := mr.get("metadata", {})).get("llm_info", {}).get("modelHash"):
                         self.fingerprint = meta["llm_info"]["modelHash"]
@@ -174,7 +196,6 @@ class StreamProcessor(BaseProcessor):
             raise
         finally:
             await self.close()
-
 
 class CollectProcessor(BaseProcessor):
     """非流式响应处理器"""
@@ -209,7 +230,14 @@ class CollectProcessor(BaseProcessor):
                     
                     if urls := mr.get("generatedImageUrls"):
                         content += "\n"
+                        valid_image_count = 0
+                        
                         for url in urls:
+                            # 跳过空 URL
+                            if not url or not url.strip():
+                                logger.warning(f"Empty image URL in generatedImageUrls")
+                                continue
+                                
                             parts = url.split("/")
                             img_id = parts[-2] if len(parts) >= 2 else "image"
                             
@@ -218,12 +246,17 @@ class CollectProcessor(BaseProcessor):
                                 base64_data = await dl_service.to_base64(url, self.token, "image")
                                 if base64_data:
                                     content += f"![{img_id}]({base64_data})\n"
+                                    valid_image_count += 1
                                 else:
                                     final_url = await self.process_url(url, "image")
-                                    content += f"![{img_id}]({final_url})\n"
-                            else:
-                                final_url = await self.process_url(url, "image")
-                                content += f"![{img_id}]({final_url})\n"
+                                    # 验证最终 URL
+                                    if final_url and not final_url.endswith('/image/'):
+                                        content += f"![{img_id}]({final_url})\n"
+                                        valid_image_count += 1
+                        
+                        # 如果请求了图片但全部失败，给出提示
+                        if valid_image_count == 0:
+                            content += "⚠️ 图片生成失败，Grok API 未返回有效的图片链接。\n"
                     
                     if (meta := mr.get("metadata", {})).get("llm_info", {}).get("modelHash"):
                         fingerprint = meta["llm_info"]["modelHash"]
@@ -250,7 +283,6 @@ class CollectProcessor(BaseProcessor):
                 "completion_tokens_details": {"text_tokens": 0, "audio_tokens": 0, "reasoning_tokens": 0}
             }
         }
-
 
 class VideoStreamProcessor(BaseProcessor):
     """视频流式响应处理器"""
@@ -334,7 +366,6 @@ class VideoStreamProcessor(BaseProcessor):
         finally:
             await self.close()
 
-
 class VideoCollectProcessor(BaseProcessor):
     """视频非流式响应处理器"""
     
@@ -396,7 +427,6 @@ class VideoCollectProcessor(BaseProcessor):
             }],
             "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
         }
-
 
 class ImageStreamProcessor(BaseProcessor):
     """图片生成流式响应处理器"""
@@ -483,7 +513,6 @@ class ImageStreamProcessor(BaseProcessor):
         finally:
             await self.close()
 
-
 class ImageCollectProcessor(BaseProcessor):
     """图片生成非流式响应处理器"""
     
@@ -523,7 +552,6 @@ class ImageCollectProcessor(BaseProcessor):
             await self.close()
         
         return images
-
 
 __all__ = [
     "StreamProcessor",
